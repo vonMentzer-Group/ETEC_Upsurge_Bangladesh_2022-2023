@@ -1,0 +1,521 @@
+
+---
+title: "Bangladesh ETEC upsurge 2022-2023 Analysis - 2022-2023"
+output: html_notebook
+---
+#Version of R
+```{r}
+R.version
+```
+
+
+#Read in dependencies
+```{r}
+library(ggplot2)
+library(dplyr)
+library(ggtree)
+library(ape)
+library(ggnewscale)
+library(treeio)
+```
+
+#Load in data
+```{r}
+#Metadata
+raw_metadata <- read.csv("/Users/xvoast/Documents/R_Projects/RP-ETEC-ICDDRB-2023/data/processed/Metadata_ETEC_2022_2023_Bangladesh_v2.csv")
+
+#Add a column called CS23 only with genomes with CS23
+raw_metadata <- raw_metadata %>%
+  dplyr::mutate(CS23 = ifelse(CF_profile %in% paste0("CS23"), "CS23", NA))
+
+submitted_metadata <- read.csv("/Users/xvoast/Documents/R_Projects/RP-ETEC-ICDDRB-2023/data/processed/Metadata_ETEC_2022_2023_Bangladesh_submission.csv")
+
+```
+
+#Read in tree
+```{r}
+#Phylogenetic tree
+tree <- read.tree("/Users/xvoast/Documents/R_Projects/RP-ETEC-ICDDRB-2023/data/raw/core_gene_alignment_snp.aln.snp_sites.aln_240705.treefile")
+```
+
+##### MAIN FIGURES #####
+# Figure 1
+
+#Figure 2 CS23 increase over the years in Bangladesh
+```{r}
+cs23_barplot <- raw_metadata %>%
+  dplyr::select(CF_profile, Year, Country) %>%
+  dplyr::filter(str_detect(CF_profile, "CS23")) %>%
+  dplyr::filter(str_detect(Country, "Bangladesh")) %>%
+  dplyr::group_by(Year) %>%
+  dplyr::summarise(freq = n()) %>%
+  dplyr::mutate(total = sum(freq), percentage = (freq/total) * 100)
+
+# Create the bar plot with percentage on top of bars - This is the plot we use in the manuscript
+p.bar.cs23 <- ggplot(cs23_barplot, aes(x = Year, y = freq)) +
+  geom_bar(stat = "identity", fill = "black") +
+  geom_text(aes(label = paste0(round(percentage, 1), "%")), 
+            vjust = -0.5, color = "black", size = 3.5) +
+  labs(x = "Year",
+       y = "Frequency")  +
+  scale_y_continuous(breaks = seq(0, max(cs23_barplot$freq) + 10, by = 10),
+                     limits = c(0, max(cs23_barplot$freq) + 5)) +
+  theme_minimal()
+
+#####Other versions of the plot
+# Create the bar plot with number of geonomes on top of bars
+p.bar.cs23 <- ggplot(cs23_barplot, aes(x = Year, y = freq)) +
+  geom_bar(stat = "identity", fill = "black") +
+  geom_text(aes(label = paste("n = ", freq)), 
+            vjust = -0.5, color = "black", size = 3.5) +
+  labs(x = "Year",
+       y = "Frequency") +
+  scale_y_continuous(breaks = seq(0, max(cs23_barplot$freq) + 10, by = 10),
+                     limits = c(0, max(cs23_barplot$freq) + 5)) +
+  theme_minimal()
+
+
+# Create the bar plot. Now plotting the percentage on top of the bars and the n = freq in white inside the bars
+p.bar.extra.cs23 <- ggplot(cs23_barplot, aes(x = Year, y = freq)) +
+  geom_bar(stat = "identity", fill = "black") +
+  geom_text(aes(label = paste0("n = ", freq)), 
+            vjust = 1.5, color = "white", size = 3.5) +
+  geom_text(aes(label = paste0(round(percentage, 1), "%")), 
+            vjust = -0.5, color = "black", size = 3.5) +
+  labs(x = "Year",
+       y = "Frequency") +
+  scale_y_continuous(breaks = seq(0, max(cs23_barplot$freq) + 10, by = 10),
+                     limits = c(0, max(cs23_barplot$freq) + 5)) +
+  theme_minimal()
+
++
+  theme(
+    plot.margin = unit(c(1, 1, 1, 1), "cm"),
+    axis.text.y = element_text(size = rel(1.5))
+  ) +
+  coord_cartesian(clip = 'off')
+
+
+
+
+#Save the figure as PDF
+# pdf("/Users/xvoast/Documents/R_Projects/RP-ETEC-ICDDRB-2023/figures/fig3.barplot.cs23.pdf", width = 3, height = 5)
+# plot(p.bar.cs23)
+# dev.off()
+# 
+# pdf("/Users/xvoast/Documents/R_Projects/RP-ETEC-ICDDRB-2023/figures/fig3.barplot.extra.cs23.pdf", width = 3, height = 5)
+# plot(p.bar.extra.cs23)
+# dev.off()
+
+```
+
+
+#Figure 4 - Phylogenetic tree showing ETEC lineages and the distribution of CS23.
+```{r}
+#Get the tip labels
+tip_labels <- data.frame(TipLabels(tree, single = TRUE))
+names(tip_labels)[1] <- 'tip'
+
+tip_info <- tip_labels %>%
+  dplyr::mutate(new_labels = tip_labels$tip) %>%
+  dplyr::mutate(new_labels = str_remove(new_labels, ".edited"))
+
+#Add the tiplabels to the metadata file
+metadata.tip <- left_join(raw_metadata, select(tip_info, c(tip, new_labels)), by = c("name" = "new_labels"))
+
+#Create a df for plotting study by color in the tips
+tip_study <- metadata.tip %>% dplyr::select(tip, name, Study)
+
+#Create dfs for plotting data on tree
+cs23.plotting <- data.frame(row.names=metadata.tip$tip, select(metadata.tip, c(CS23)))
+status.plotting <- data.frame(row.names=metadata.tip$tip, select(metadata.tip, c(Dehydration.status)))
+serotype.plotting <- data.frame(row.names=metadata.tip$tip, select(metadata.tip, c(O_profile)))
+
+
+p.circ <- ggtree(rooted.tree, layout = 'circular') %<+% tip_study +
+  geom_tippoint(aes(color = Study), size = 1) +
+  scale_color_manual(values = c("Global" = "gray", "Previous Year_Bangladesh" = "#6a4c93", "2022-23" = "#ff924c"))
+
+plot.circ.meta <- gheatmap(p.circ, 
+                           status.plotting,
+                           offset = 0.0005,
+                           color=NULL, 
+                           colnames = FALSE, 
+                           width = 0.03,
+                           legend_title = "Status") +
+  scale_fill_manual(values = status.colors, na.value = "grey95")
+
+
+
+
+# #Add CS23
+plot.circ.meta <- plot.circ.meta + new_scale_fill()
+plot.circ.meta <- gheatmap(plot.circ.meta, 
+                           cs23.plotting,
+                           offset = 0.0015,
+                           color=NULL, 
+                           colnames = FALSE, 
+                           width = 0.03,
+                           legend_title = "CS23-positive") +
+  scale_fill_manual(values = df.cf.color$cf.colors, na.value = "grey95")
+
+plot.circ.meta.scale <- plot.circ.meta + geom_treescale()
+
+#Highlights for lineages have been added manually in Illustrator
+
+#Save the figure as PDF
+# pdf("/Users/avm/Documents/R_Projects/RP-ETEC-ICDDRB-2023/figures/Lancet/main.fig.plot.circ.meta.scale.pdf", width = 20, height = 20)
+# plot(plot.circ.meta.scale)
+# dev.off()
+
+```
+
+#Calculate the percentage of genomes in lineages, with specific CF profiles
+```{r}
+#CS23 positive
+
+#Genomes per ETEC lineages
+raw_metadata %>% dplyr::group_by(ETEC_Lineage) %>% dplyr::summarise(freq = n())
+
+#Genomes per ETEC lineages in upsurge period
+raw_metadata %>% dplyr::filter(Study=="2022-23")
+raw_metadata %>% dplyr::filter(Study == "2022-23") %>% dplyr::group_by(ETEC_Lineage) %>% dplyr::summarise(freq = n()) %>% dplyr::arrange(desc(freq)) %>% dplyr::mutate(perc = (freq/325)*100)
+raw_metadata %>% dplyr::filter(Study == "2022-23") %>% dplyr::group_by(ETEC_Lineage, CF_profile) %>% dplyr::summarise(freq = n()) %>% dplyr::arrange(desc(CF_profile))
+raw_metadata %>% dplyr::filter(Study == "2022-23") %>% dplyr::group_by(ETEC_Lineage, CF_profile, Toxin_profile) %>% dplyr::summarise(freq = n()) %>% dplyr::arrange(desc(CF_profile))
+raw_metadata %>% dplyr::filter(Study == "2022-23") %>% dplyr::filter(str_detect(CF_profile, "CS23")) %>% dplyr::group_by(ETEC_Lineage, CF_profile) %>% dplyr::summarise(freq = n()) %>% dplyr::arrange(desc(CF_profile)) %>% dplyr::ungroup() %>% dplyr::mutate(total = sum(freq))
+
+raw_metadata %>% dplyr::filter(Study == "2022-23" | Study == "Previous Year_Bangladesh") %>% dplyr::filter(str_detect(CF_profile, "CS23")) %>% dplyr::group_by(Study) %>% dplyr::summarise(freq = n()) %>% dplyr::arrange(desc(freq)) %>% dplyr::ungroup() %>% dplyr::mutate(total = sum(freq))
+
+raw_metadata %>% dplyr::filter(Study == "2022-23") %>% dplyr::filter(str_detect(CF_profile, "CS23")) %>% dplyr::group_by(Dehydration.status) %>% dplyr::summarise(freq = n())
+
+
+raw_metadata %>% dplyr::filter(Study == "2022-23") %>% dplyr::filter(str_detect(ETEC_Lineage, "L19")) %>% dplyr::group_by(CF_profile, Toxin_profile) %>% dplyr::summarise(freq = n())
+
+raw_metadata %>% dplyr::filter(Country == "Bangladesh") %>% dplyr::group_by(Study) %>% dplyr::summarise(freq = n())
+df <- metadata %>% dplyr::filter(Country == "Bangladesh") %>% dplyr::group_by(Study, ETEC_Lineage) %>% dplyr::summarise(freq = n()) %>% ungroup 
+raw_metadata %>% dplyr::filter(Country == "Bangladesh") %>% dplyr::group_by(Study, ETEC_Lineage) %>% dplyr::summarise(freq = n()) %>% ungroup
+df <- df %>%
+  dplyr::filter(ETEC_Lineage == "L19" | ETEC_Lineage == "L25" | ETEC_Lineage == "L26" | ETEC_Lineage == "L27" | ETEC_Lineage == "L28" | ETEC_Lineage == "L29")
+
+raw_metadata %>% dplyr::filter(CF_profile == "CS23") %>% dplyr::group_by(Age) %>% dplyr::summarise(freq = n())
+
+metadata %>% dplyr::filter(CF_profile == "CS23") %>% dplyr::group_by(Age_Group) %>% dplyr::summarise(freq = n())
+
+toxin_vs_dehydration.status <- metadata_new %>% dplyr::filter(Study == "Bangladesh 2022-23 (This study)") %>% dplyr::group_by(Dehydration.status, Toxin_profile) %>% dplyr::summarise(freq = n())
+
+
+
+
+
+```
+
+#### SUPPLEMENTARY FIGURES ####
+
+#Supplementary Figure S1: V. cholerae vs ETEC
+#Add code here if you have
+
+#Supplmentary figure 2
+```{r}
+#Supplementary figure with bootstrap values
+
+#Midpoint root tree
+rooted.tree <- midpoint(tree)
+
+#PLot a midpoint rooted tree
+p.circ<- ggtree(
+  rooted.tree, layout = 'circular')
+
+#add the strainID as tip labels
+strainID.df <- raw_metadata %>%
+  dplyr::select(name, StrainID) %>%
+  left_join(tip_info, by = c("name" = "new_labels")) %>%
+  dplyr::select(tip, StrainID)
+
+#Add symbols for bootstrap values above 95
+p.circ.bs <- p.circ + geom_point2(aes(subset=(!isTip & as.numeric(label)>95)),size=0.75, shape=24, fill='red') #triangles
+#Add the new tip labels
+p.circ.bs$data <- left_join(p.circ.bs$data, strainID.df, by = c("label" = "tip"))
+#Plot the tree
+p.circ.bs.strainID <- p.circ.bs +
+  geom_tiplab(aes(label=StrainID), size = 1, align = TRUE, linesize = 0.5)
+
+#Save the figure as PDF
+# pdf("/Users/avm/Documents/R_Projects/RP-ETEC-ICDDRB-2023/figures/Lancet/supp.fig.plot.circ.tips.bs.strainID.pdf", width = 20, height = 20)
+# plot(p.circ.bs.strainID)
+# dev.off()
+```
+
+#Table 2 CF profiles across Study periods
+```{r}
+cf_2022_23 <- metadata %>%
+  dplyr::select(CF_profile, Study) %>%
+  dplyr::filter(Study == "2022-23") %>%
+  dplyr::group_by(CF_profile) %>%
+  dplyr::summarise(study_2022_23_freq = n()) %>%
+  dplyr::mutate(total_2022_23 = sum(study_2022_23_freq)) %>%
+  dplyr::ungroup()
+
+cf_previous <- metadata %>%
+  dplyr::select(CF_profile, Study) %>%
+  dplyr::filter(Study == "Previous Year_Bangladesh") %>%
+  dplyr::group_by(CF_profile) %>%
+  dplyr::summarise(study_previous_freq = n()) %>%
+  dplyr::mutate(total_previous = sum(study_previous_freq)) %>%
+  dplyr::ungroup()
+
+data_for_stats <- cf_2022_23 %>%
+  left_join(cf_previous, by = "CF_profile")
+
+data_for_stats %>% write.csv("/Users/avm/Documents/R_Projects/RP-ETEC-ICDDRB-2023/data/processed/data_for_stats_cf_profile_table2.csv", row.names = FALSE, quote = FALSE)
+
+
+###STATS
+
+# Load the data
+#data <- read.csv("/mnt/data/data_for_stats_cf_profile_table2.csv")
+
+# Filter the data to include only CF profiles present in at least 5 genomes
+filtered_data <- data_for_stats %>%
+  filter(study_2022_23_freq >= 5 | study_previous_freq >= 5)
+
+# Define the total number of samples in each study period
+total_2022_23 <- filtered_data$total_2022_23[1]
+total_previous <- filtered_data$total_previous[1]
+
+# Function to perform hypergeometric test for a single row
+perform_hypergeometric_test <- function(study_freq, total_study, total_population) {
+  phyper(study_freq - 1, study_freq, total_population - study_freq, total_study, lower.tail = FALSE)
+}
+
+# Create a summary dataframe for the hypergeometric test
+summary_data <- filtered_data %>%
+  rowwise() %>%
+  mutate(
+    p_value_2022_23 = perform_hypergeometric_test(study_2022_23_freq, total_2022_23, total_2022_23 + total_previous),
+    p_value_previous = perform_hypergeometric_test(study_previous_freq, total_previous, total_2022_23 + total_previous),
+    significant_p_value_2022_23 = ifelse(p_value_2022_23 < 0.05, round(p_value_2022_23, 3), NA),
+    significant_p_value_previous = ifelse(p_value_previous < 0.05, round(p_value_previous, 3), NA)
+  )
+
+# Create a summary table
+summary_table <- summary_data %>%
+  select(CF_profile, study_2022_23_freq, study_previous_freq, p_value_2022_23, p_value_previous, significant_p_value_2022_23, significant_p_value_previous) %>%
+  mutate(
+    study_2022_23_freq = paste0(study_2022_23_freq, " (", round(study_2022_23_freq / total_2022_23 * 100, 1), "%)"),
+    study_previous_freq = paste0(study_previous_freq, " (", round(study_previous_freq / total_previous * 100, 1), "%)")
+  )
+
+# Print the summary table
+print(summary_table)
+
+
+summary_table %>% write.csv("/Users/avm/Documents/R_Projects/RP-ETEC-ICDDRB-2023/data/processed/table_2_hypergeometric_test.csv", row.names = FALSE, quote = FALSE)
+
+
+```
+
+
+#Table 3 Summary
+```{r}
+df_lineage_baps <- metadata %>%
+  group_by(ETEC_Lineage, level.1) %>%
+  summarise(level.2 = paste(unique(level.2), collapse = "; ")) %>%
+  ungroup()
+
+df_mlst <- metadata %>%
+  group_by(ETEC_Lineage) %>%
+  dplyr::mutate(MLST = str_replace(MLST, "-", "")) %>%
+  summarise(MLST = paste(unique(MLST), collapse = "; ")) %>%
+  ungroup()
+
+perc_2022_2023_per_lineage <- metadata %>%
+  dplyr::filter(Study == "2022-23") %>%
+  dplyr::select(name, ETEC_Lineage) %>%
+  dplyr::group_by(ETEC_Lineage) %>%
+  dplyr::summarise(freq = n()) %>%
+  dplyr::mutate(total = sum(freq), percentage = round((freq/total) * 100, 1)) %>%
+  dplyr::mutate(n_perc_2022_2023 = paste(freq, "(", percentage, ")")) %>%
+  dplyr::select(ETEC_Lineage, n_perc_2022_2023)
+
+perc_Global_per_lineage <- metadata %>%
+  dplyr::filter(Study == "Global") %>%
+  dplyr::select(name, ETEC_Lineage) %>%
+  dplyr::group_by(ETEC_Lineage) %>%
+  dplyr::summarise(freq = n()) %>%
+  dplyr::mutate(total = sum(freq), percentage = round((freq/total) * 100, 1)) %>%
+  dplyr::mutate(n_perc_global = paste(freq, "(", percentage, ")")) %>%
+  dplyr::select(ETEC_Lineage, n_perc_global)
+
+
+perc_previous_per_lineage <- metadata %>%
+  dplyr::filter(Study == "Previous Year_Bangladesh") %>%
+  dplyr::select(name, ETEC_Lineage) %>%
+  dplyr::group_by(ETEC_Lineage) %>%
+  dplyr::summarise(freq = n()) %>%
+  dplyr::mutate(total = sum(freq), percentage = round((freq/total) * 100, 1)) %>%
+  dplyr::mutate(n_perc_previous = paste(freq, "(", percentage, ")")) %>%
+  dplyr::select(ETEC_Lineage, n_perc_previous)
+
+total_genomes_per_lineage <- metadata %>%
+  dplyr::select(name, ETEC_Lineage) %>%
+  dplyr::group_by(ETEC_Lineage) %>%
+  dplyr::summarise(total = n()) %>%
+  dplyr::select(ETEC_Lineage, total)
+
+
+table3 <- df_lineage_baps %>%
+  left_join(df_mlst, by = "ETEC_Lineage")
+
+table3 <- table3 %>%
+  left_join(perc_2022_2023_per_lineage, by = "ETEC_Lineage")
+
+table3 <- table3 %>%
+  left_join(perc_Global_per_lineage, by = "ETEC_Lineage")
+
+table3 <- table3 %>%
+  left_join(perc_previous_per_lineage, by = "ETEC_Lineage")
+
+table3 <- table3 %>%
+  left_join(total_genomes_per_lineage, by = "ETEC_Lineage")
+
+table3 %>% write.csv("/Users/avm/Documents/R_Projects/RP-ETEC-ICDDRB-2023/data/processed/Table_3_new.csv",  row.names = FALSE, quote = FALSE)
+```
+
+#Abricate data
+#Read in data
+```{r}
+ori_data <- read.csv("/Users/avm/Documents/R_Projects/RP-ETEC-ICDDRB-2023/data/raw/abricate_output_edited_only_major_subunit_avm_240702.csv", na.strings = ".")
+```
+
+#Clean the output from abricate
+```{r}
+# Function to replace numbers with column prefix
+replace_values <- function(df, columns_to_exclude) {
+  df %>%
+    # Replace numbers with the prefix of the column name before the first dot for all columns except specified ones
+    mutate(across(-all_of(columns_to_exclude), ~ ifelse(!is.na(.), sub("\\..*", "", cur_column()), .))) %>%
+    # Specifically replace "CFA" with "CFA/I" in the column CFA.I.cfaB
+    mutate(CFA.I.cfaB = ifelse(CFA.I.cfaB == "CFA", "CFA/I", CFA.I.cfaB))
+}
+
+columns_to_exclude <- c("Lane", "Name")
+
+# Apply the function to the dataframe
+data <- replace_values(ori_data, columns_to_exclude)
+
+#We need to clean up CS6 columns
+data <- data %>%
+  # Create CS6.cssA
+  mutate(CS6.cssA = ifelse(rowSums(!is.na(select(., starts_with("CS6.cssA")))) > 0, "CS6.cssA", NA)) %>%
+  # Create CS6.cssB
+  mutate(CS6.cssB = ifelse(rowSums(!is.na(select(., starts_with("CS6.cssB")))) > 0, "CS6.cssB", NA))
+
+data <- data %>%
+  # Create CS6.cssAB
+  mutate(CS6.cssAB = ifelse(!is.na(CS6.cssA) & !is.na(CS6.cssB), "CS6", NA))
+
+data <- data %>%
+  # Create CS14.csuA1A2
+  mutate(CS14.csuA1A2 = ifelse(!is.na(CS14.csuA1) & !is.na(CS14.csuA2), "CS14", NA))
+
+#Now we summarise the CFs into a CF profile in a new column. But first we need to order the columns
+colnames(data)
+
+data <- data %>%
+  dplyr::select(Lane,Name, CFA.I.cfaB, CS1.cooA, CS2.cotA, CS3.cstH, CS5.csfA, CS6.cssAB, CS7.csvA, CS8.cofA, CS12.cswA, CS13.cshE, CS14.csuA1A2, CS14.csuA2, CS17.csbA, CS18.fotA, CS19.csdB, PCFO71.cosB, CS20.csnA, CS21.lngA, CS23.aalE, CS26.crsH, CS27A.gene3, CS27B.gene1, CS28A.gene2, CS28B.gene2, CS30.csmG, F41a.fim41a.A)
+
+
+data <- data %>%
+  rowwise() %>%
+  mutate(CF_profile = ifelse(all(is.na(c_across(-all_of(columns_to_exclude)))),
+                             "CFnegative",
+                             paste(na.omit(c_across(-all_of(columns_to_exclude))), collapse = "+"))) %>%
+  ungroup()
+
+#Lets save the data df to a new file with only Lane, Name and CF_profile
+selected_data <- data %>%
+  dplyr::select(Name, CF_profile)
+
+selected_data <- selected_data %>%
+  dplyr::mutate(CF_profile = ifelse(CF_profile == "CS14+CS14", "CS14", CF_profile))
+
+
+selected_data %>% write.csv("/Users/avm/Documents/R_Projects/RP-ETEC-ICDDRB-2023/data/processed/cleaned_abricate_CFprof.csv", row.names = FALSE, quote = FALSE)
+```
+
+
+#hierBAPS analysis
+```{r}
+#Test multiple different n.pops
+# Load the necessary libraries
+library(rhierbaps)
+library(ggtree)
+library(phytools)
+library(ape)
+
+#For reproducibility
+set.seed(1234)
+
+# Import SNP alignment
+snp.aln <- read.FASTA("/Users/avm/Documents/R_Projects/RP-ETEC-ICDDRB-2023/data/raw/core_gene_alignment_snp.aln.snp_sites.aln")
+
+# Create SNP (adjacency) matrix from the imported SNP alignment, including singletons
+rep.snp.matrix <- load_fasta(snp.aln, keep.singletons = TRUE)
+
+# Experiment with different values of n.pops
+for (n_pops in c(50, 60, 80, 100, 120)) {
+  rep.BAPS.clusters <- hierBAPS(rep.snp.matrix, max.depth = 2, n.pops = n_pops, n.extra.rounds = Inf, quiet = TRUE)
+  
+  # Save the results for each n.pops value
+  write.csv(rep.BAPS.clusters$partition.df, paste0("/Users/avm/Documents/R_Projects/RP-ETEC-ICDDRB-2023/data/processed/sadia_new_hBAPS_clusters_v2_", n_pops, ".csv"))
+}
+
+
+# Read and root the tree
+tree <- read.tree("/Users/avm/Documents/R_Projects/RP-ETEC-ICDDRB-2023/data/raw/core_gene_alignment_snp.aln.snp_sites.aln_240705.treefile")
+rooted.tree <- midpoint(tree)
+
+# Function to generate and save plots
+baps_tree_generator <- function(file_path) {
+  # Read the CSV file
+  bapsdata <- read.csv(file_path)
+  
+  # Process the metadata
+  bapsdata <- bapsdata %>%
+    dplyr::select(Isolate, level.1, level.2) %>%
+    dplyr::mutate(Isolate = str_replace(Isolate, "#", "_"))
+  
+  # Generate the plot
+  p <- ggtree(rooted.tree, layout = 'circular') %<+% bapsdata
+  p <- p + geom_tippoint(aes(color = factor(`level.1`)))
+  p <- p + theme(legend.position = "right")
+  p <- p + geom_tiplab(aes(label = `level.2`), size = 1, offset = 0)
+  
+  # Extract the last number from the filename
+  file_name <- basename(file_path)
+  last_number <- str_extract(file_name, "\\d+(?=\\.csv$)")
+  
+  # Save the plot as a PDF
+  pdf_file_name <- paste0("/Users/avm/Documents/R_Projects/RP-ETEC-ICDDRB-2023/figures/baps_analysis/plot.circ.baps.depth2_npops", last_number, ".pdf")
+  pdf(pdf_file_name, width = 20, height = 20)
+  plot(p)
+  dev.off()
+  
+  return(pdf_file_name)
+}
+
+# List of files to process
+file_list <- c(
+  "/Users/avm/Documents/R_Projects/RP-ETEC-ICDDRB-2023/data/processed/sadia_new_hBAPS_clusters_v2_50.csv",
+  "/Users/avm/Documents/R_Projects/RP-ETEC-ICDDRB-2023/data/processed/sadia_new_hBAPS_clusters_v2_60.csv",
+  "/Users/avm/Documents/R_Projects/RP-ETEC-ICDDRB-2023/data/processed/sadia_new_hBAPS_clusters_v2_80.csv",
+  "/Users/avm/Documents/R_Projects/RP-ETEC-ICDDRB-2023/data/processed/sadia_new_hBAPS_clusters_v2_100.csv",
+  "/Users/avm/Documents/R_Projects/RP-ETEC-ICDDRB-2023/data/processed/sadia_new_hBAPS_clusters_v2_120.csv"
+)
+
+# Generate and save plots for each file
+lapply(file_list, baps_tree_generator)
+
+```
+
+
